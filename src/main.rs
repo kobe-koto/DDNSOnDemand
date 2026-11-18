@@ -20,6 +20,10 @@ use tracing::{error, info};
 
 use cli::{Cli, Command};
 
+/// Default User-Agent for all outbound HTTP requests. Some IP/echo services and
+/// CDNs reject requests without one (e.g. responding 403), so we always send it.
+pub const USER_AGENT: &str = concat!("ddnsondemand/", env!("CARGO_PKG_VERSION"));
+
 /// Current UTC timestamp as an RFC 3339 string (used in state and templates).
 pub fn now_rfc3339() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)

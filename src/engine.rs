@@ -34,6 +34,7 @@ impl Engine {
         Ok(Self {
             clients,
             notify_client: reqwest::Client::builder()
+                .user_agent(crate::USER_AGENT)
                 .timeout(std::time::Duration::from_secs(15))
                 .build()?,
             state,

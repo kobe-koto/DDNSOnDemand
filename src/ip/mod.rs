@@ -53,10 +53,12 @@ pub struct StackClients {
 impl StackClients {
     pub fn new(timeout: Duration) -> Result<Self> {
         let v4 = reqwest::Client::builder()
+            .user_agent(crate::USER_AGENT)
             .local_address(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
             .timeout(timeout)
             .build()?;
         let v6 = reqwest::Client::builder()
+            .user_agent(crate::USER_AGENT)
             .local_address(IpAddr::V6(Ipv6Addr::UNSPECIFIED))
             .timeout(timeout)
             .build()?;
@@ -103,11 +105,11 @@ async fn resolve_one(
         IpSourceConfig::Interface { interface, select } => {
             interface::resolve_interface(interface, family, select)
         }
-        IpSourceConfig::HttpPlain { url } => {
-            http::resolve_http_plain(clients.for_family(family), url, family).await
+        IpSourceConfig::HttpPlain { url, headers } => {
+            http::resolve_http_plain(clients.for_family(family), url, headers, family).await
         }
-        IpSourceConfig::HttpJson { url, key } => {
-            http::resolve_http_json(clients.for_family(family), url, key, family).await
+        IpSourceConfig::HttpJson { url, key, headers } => {
+            http::resolve_http_json(clients.for_family(family), url, key, headers, family).await
         }
     }
 }

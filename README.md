@@ -74,6 +74,9 @@ example. Key points:
     `exclude_temporary: bool`).
   - `http_plain` — `url:` returning a bare IP.
   - `http_json` — `url:` and `key:` (simple key like `ip`, or JSON pointer `/data/ip`).
+  - HTTP sources accept an optional `headers:` map. A default `User-Agent`
+    (`ddnsondemand/<version>`) is always sent; override it (or add other
+    headers) when a service filters by User-Agent and returns 403.
 - `targets.provider.type` is `cloudflare` (`api_token`, and `zone_id` **or**
   `zone`) or `generic` (`update:` with `method`, `url`, `headers`, optional
   `body`, and `success` = `status: [..]` + optional `body_contains`).

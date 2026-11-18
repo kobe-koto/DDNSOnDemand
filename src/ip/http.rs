@@ -1,5 +1,6 @@
 //! HTTP-based IP sources (plain text and JSON).
 
+use std::collections::BTreeMap;
 use std::net::IpAddr;
 
 use anyhow::{anyhow, Context, Result};
@@ -9,10 +10,14 @@ use super::{check_family, Family};
 pub async fn resolve_http_plain(
     client: &reqwest::Client,
     url: &str,
+    headers: &BTreeMap<String, String>,
     family: Family,
 ) -> Result<IpAddr> {
-    let text = client
-        .get(url)
+    let mut rb = client.get(url);
+    for (k, v) in headers {
+        rb = rb.header(k, v);
+    }
+    let text = rb
         .send()
         .await
         .with_context(|| format!("requesting {url}"))?
@@ -32,10 +37,14 @@ pub async fn resolve_http_json(
     client: &reqwest::Client,
     url: &str,
     key: &str,
+    headers: &BTreeMap<String, String>,
     family: Family,
 ) -> Result<IpAddr> {
-    let value: serde_json::Value = client
-        .get(url)
+    let mut rb = client.get(url);
+    for (k, v) in headers {
+        rb = rb.header(k, v);
+    }
+    let value: serde_json::Value = rb
         .send()
         .await
         .with_context(|| format!("requesting {url}"))?
@@ -98,7 +107,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_string("203.0.113.9\n"))
             .mount(&server)
             .await;
-        let ip = resolve_http_plain(&reqwest::Client::new(), &server.uri(), Family::V4)
+        let ip = resolve_http_plain(&reqwest::Client::new(), &server.uri(), &BTreeMap::new(), Family::V4)
             .await
             .unwrap();
         assert_eq!(ip.to_string(), "203.0.113.9");
@@ -111,7 +120,7 @@ mod tests {
             .respond_with(ResponseTemplate::new(200).set_body_string("2001:db8::1"))
             .mount(&server)
             .await;
-        let err = resolve_http_plain(&reqwest::Client::new(), &server.uri(), Family::V4).await;
+        let err = resolve_http_plain(&reqwest::Client::new(), &server.uri(), &BTreeMap::new(), Family::V4).await;
         assert!(err.is_err());
     }
 
@@ -125,7 +134,7 @@ mod tests {
             )
             .mount(&server)
             .await;
-        let ip = resolve_http_json(&reqwest::Client::new(), &server.uri(), "/data/ip", Family::V4)
+        let ip = resolve_http_json(&reqwest::Client::new(), &server.uri(), "/data/ip", &BTreeMap::new(), Family::V4)
             .await
             .unwrap();
         assert_eq!(ip.to_string(), "203.0.113.7");

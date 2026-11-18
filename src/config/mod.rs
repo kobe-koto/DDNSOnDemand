@@ -101,12 +101,18 @@ pub enum IpSourceConfig {
         select: SelectConfig,
     },
     /// GET a URL that returns a bare IP address as plain text.
-    HttpPlain { url: String },
+    HttpPlain {
+        url: String,
+        #[serde(default)]
+        headers: BTreeMap<String, String>,
+    },
     /// GET a URL that returns JSON; extract the IP from `key`.
     HttpJson {
         url: String,
         /// Simple key (`ip`) or a JSON pointer (`/data/ip`).
         key: String,
+        #[serde(default)]
+        headers: BTreeMap<String, String>,
     },
 }
 

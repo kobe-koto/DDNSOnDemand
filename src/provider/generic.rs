@@ -16,6 +16,7 @@ pub struct GenericProvider {
 impl GenericProvider {
     pub fn new(req: GenericRequest) -> Result<Self> {
         let client = reqwest::Client::builder()
+            .user_agent(crate::USER_AGENT)
             .timeout(std::time::Duration::from_secs(20))
             .build()?;
         Ok(Self { client, req })

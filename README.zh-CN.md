@@ -70,6 +70,9 @@ ddnsondemand -c /etc/ddnsondemand/config.yaml daemon
     `exclude_temporary: bool`）。
   - `http_plain` —— `url:` 返回纯文本 IP。
   - `http_json` —— `url:` 与 `key:`（简单键名如 `ip`，或 JSON 指针 `/data/ip`）。
+  - HTTP 来源支持可选的 `headers:` 映射。默认总会带上 `User-Agent`
+    （`ddnsondemand/<版本>`）；当某服务按 User-Agent 过滤并返回 403 时，可在此覆盖
+    它或追加其他请求头。
 - `targets.provider.type` 为 `cloudflare`（`api_token`，以及 `zone_id` **或**
   `zone`）或 `generic`（`update:` 含 `method`、`url`、`headers`、可选 `body`，
   以及 `success` = `status: [..]` 加可选 `body_contains`）。

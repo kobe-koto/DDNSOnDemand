@@ -26,6 +26,11 @@ profiles:
           interface: eth0
         - type: http_plain
           url: https://api.ipify.org
+          # Optional per-source request headers. Some IP services filter by
+          # User-Agent (e.g. only allowing curl-like clients) and will answer
+          # 403 otherwise; override it here when needed.
+          # headers:
+          #   User-Agent: curl/8.0
         - type: http_json
           url: https://ipinfo.io/json
           key: ip                        # simple key, or a JSON pointer "/data/ip"
