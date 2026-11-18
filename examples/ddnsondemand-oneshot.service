@@ -1,0 +1,17 @@
+[Unit]
+Description=DDNSOnDemand (one-shot update)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/ddnsondemand/env
+ExecStart=/usr/bin/ddnsondemand --config /etc/ddnsondemand/config.yaml --state /var/lib/ddnsondemand/state.json oneshot
+
+# Hardening
+DynamicUser=yes
+StateDirectory=ddnsondemand
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes

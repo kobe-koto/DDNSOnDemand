@@ -1,0 +1,57 @@
+[package]
+name = "ddnsondemand"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "MIT"
+description = "On-demand / daemon DDNS client with per-family IP source pools, Cloudflare and generic HTTP providers, and templated notifications"
+repository = "https://github.com/kobe-koto/DDNSOnDemand"
+
+[[bin]]
+name = "ddnsondemand"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1.40", features = ["rt", "macros", "signal", "time", "sync"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_norway = "0.9"
+humantime-serde = "1"
+clap = { version = "4.5", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json", "ansi"] }
+anyhow = "1"
+if-addrs = "0.13"
+minijinja = "2"
+directories = "6"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+
+[dev-dependencies]
+wiremock = "0.6"
+tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "time"] }
+
+[profile.release]
+opt-level = "z"      # optimise for size
+lto = true           # whole-program link-time optimisation
+codegen-units = 1    # better optimisation / smaller output
+panic = "abort"      # no unwinding tables
+strip = true         # drop symbols
+
+[package.metadata.deb]
+maintainer = "kobe koto <k@koto.cc>"
+copyright = "2026 kobe koto"
+license-file = ["LICENSE", "0"]
+extended-description = "DDNSOnDemand keeps DNS records in sync with the host's current IPv4/IPv6 addresses, as a daemon or a one-shot run driven by e.g. a systemd timer. Supports Cloudflare and generic templated HTTP providers, per-family IP source pools, and templated notifications."
+section = "net"
+priority = "optional"
+depends = "$auto"
+assets = [
+    ["target/release/ddnsondemand", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/ddnsondemand/README.md", "644"],
+    ["README.zh-CN.md", "usr/share/doc/ddnsondemand/README.zh-CN.md", "644"],
+    ["examples/config.yaml", "usr/share/doc/ddnsondemand/examples/config.yaml", "644"],
+    ["examples/ddnsondemand.service", "usr/lib/systemd/system/ddnsondemand.service", "644"],
+    ["examples/ddnsondemand-oneshot.service", "usr/lib/systemd/system/ddnsondemand-oneshot.service", "644"],
+    ["examples/ddnsondemand.timer", "usr/lib/systemd/system/ddnsondemand.timer", "644"],
+]

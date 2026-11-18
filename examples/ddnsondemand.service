@@ -1,0 +1,23 @@
+[Unit]
+Description=DDNSOnDemand (daemon mode)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Store secrets here as KEY=VALUE (CF_API_TOKEN=..., CF_ZONE_ID=..., etc.)
+EnvironmentFile=/etc/ddnsondemand/env
+ExecStart=/usr/bin/ddnsondemand --config /etc/ddnsondemand/config.yaml --state /var/lib/ddnsondemand/state.json daemon
+Restart=on-failure
+RestartSec=10
+
+# Hardening
+DynamicUser=yes
+StateDirectory=ddnsondemand
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

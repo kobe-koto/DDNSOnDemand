@@ -1,0 +1,88 @@
+# DDNSOnDemand example configuration.
+#
+# Secrets may be referenced as ${ENV_VAR} or ${ENV_VAR:-default}; they are
+# expanded from the process environment when the file is loaded.
+
+log:
+  level: info            # trace | debug | info | warn | error
+  format: text           # text | json
+
+defaults:                # daemon-wide defaults, overridable per profile
+  interval: 5m
+  http_timeout: 10s
+
+profiles:
+  # ---- Cloudflare, dual-stack home record ----
+  home:
+    enabled: true
+    interval: 5m         # daemon loop period for this profile
+
+    # IP sources are separate per family. Each pool is tried in declaration
+    # order; the first source that succeeds wins. HTTP sources are requested
+    # bound to the pool's stack (like `curl -4` / `curl -6`).
+    ip_sources:
+      v4:
+        - type: interface
+          interface: eth0
+        - type: http_plain
+          url: https://api.ipify.org
+        - type: http_json
+          url: https://ipinfo.io/json
+          key: ip                        # simple key, or a JSON pointer "/data/ip"
+      v6:
+        - type: interface
+          interface: eth0
+          select:
+            scope: global                # global (skip link-local/ULA) | any
+            exclude_temporary: true      # best-effort (see README)
+        - type: http_plain
+          url: https://api64.ipify.org
+
+    targets:
+      ttl: 300
+      proxied: false                     # Cloudflare orange-cloud; forces ttl=1
+      provider:
+        type: cloudflare
+        api_token: ${CF_API_TOKEN}
+        zone_id: ${CF_ZONE_ID}           # or:  zone: example.com
+      ipv4:                              # A records
+        - home.example.com
+      ipv6:                              # AAAA records
+        - home.example.com
+      dual:                              # both A and AAAA
+        - nas.example.com
+
+    notify:
+      on: [changed, error]               # changed | success | error | always
+      targets:
+        - name: ntfy
+          method: POST
+          url: https://ntfy.example.com/ddns
+          headers:
+            Content-Type: application/json
+          body: |
+            {"event":"{{event}}","profile":"{{profile}}","domain":"{{domain}}","type":"{{record_type}}","ip":"{{ip}}","old":"{{old_ip}}"}
+
+  # ---- Generic provider (any dynamic-DNS HTTP API) ----
+  vps:
+    enabled: true
+    ip_sources:
+      v4:
+        - type: http_plain
+          url: https://api.ipify.org
+    targets:
+      ttl: 120
+      provider:
+        type: generic
+        update:
+          method: GET
+          url: "https://dyn.example.net/update?host={{domain}}&myip={{ip}}&type={{record_type}}"
+          headers:
+            Authorization: "Basic ${DYN_BASIC_AUTH}"
+          # For POST, add:
+          # body: '{"name":"{{domain}}","content":"{{ip}}"}'
+          success:
+            status: [200]
+            body_contains: "good"        # optional substring check
+      ipv4:
+        - vps.example.net
