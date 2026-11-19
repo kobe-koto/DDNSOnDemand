@@ -1,0 +1,283 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/kobe-koto/DDNSOnDemand/main/schema/config.schema.json",
+  "title": "DDNSOnDemand configuration",
+  "description": "Configuration file for the ddnsondemand DDNS client.",
+  "type": "object",
+  "required": ["profiles"],
+  "additionalProperties": false,
+  "properties": {
+    "log": { "$ref": "#/$defs/log" },
+    "defaults": { "$ref": "#/$defs/defaults" },
+    "profiles": {
+      "type": "object",
+      "description": "Named profiles; each is updated independently.",
+      "minProperties": 1,
+      "additionalProperties": { "$ref": "#/$defs/profile" }
+    }
+  },
+  "$defs": {
+    "duration": {
+      "type": "string",
+      "description": "Humantime duration string, e.g. \"5m\", \"30s\", \"1h30m\".",
+      "pattern": "^(\\s*\\d+\\s*(ns|us|µs|ms|s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|week|weeks|M|month|months|y|year|years)\\s*)+$",
+      "examples": ["5m", "30s", "1h", "1h30m"]
+    },
+    "headers": {
+      "type": "object",
+      "description": "HTTP request headers (name -> value). Supports ${ENV} expansion.",
+      "additionalProperties": { "type": "string" }
+    },
+    "log": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "description": "Log level.",
+          "enum": ["trace", "debug", "info", "warn", "error"],
+          "default": "info"
+        },
+        "format": {
+          "description": "Log output format.",
+          "enum": ["text", "json"],
+          "default": "text"
+        }
+      }
+    },
+    "defaults": {
+      "type": "object",
+      "description": "Daemon-wide defaults, overridable per profile.",
+      "additionalProperties": false,
+      "properties": {
+        "interval": {
+          "allOf": [{ "$ref": "#/$defs/duration" }],
+          "description": "Daemon loop period.",
+          "default": "5m"
+        },
+        "http_timeout": {
+          "allOf": [{ "$ref": "#/$defs/duration" }],
+          "description": "Timeout for IP-source HTTP requests.",
+          "default": "10s"
+        }
+      }
+    },
+    "profile": {
+      "type": "object",
+      "required": ["ip_sources", "targets"],
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Whether this profile is processed.",
+          "default": true
+        },
+        "interval": {
+          "allOf": [{ "$ref": "#/$defs/duration" }],
+          "description": "Daemon loop period for this profile (overrides defaults.interval)."
+        },
+        "ip_sources": { "$ref": "#/$defs/ipSources" },
+        "targets": { "$ref": "#/$defs/targets" },
+        "notify": { "$ref": "#/$defs/notify" }
+      }
+    },
+    "ipSources": {
+      "type": "object",
+      "description": "Per-family ordered IP source pools (declaration-order fallback).",
+      "additionalProperties": false,
+      "properties": {
+        "v4": {
+          "type": "array",
+          "description": "IPv4 source pool (for A / dual records).",
+          "items": { "$ref": "#/$defs/ipSource" }
+        },
+        "v6": {
+          "type": "array",
+          "description": "IPv6 source pool (for AAAA / dual records).",
+          "items": { "$ref": "#/$defs/ipSource" }
+        }
+      }
+    },
+    "ipSource": {
+      "oneOf": [
+        {
+          "type": "object",
+          "title": "interface",
+          "description": "Read an address off a local network interface.",
+          "required": ["type", "interface"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "interface" },
+            "interface": { "type": "string", "description": "Interface name, e.g. eth0." },
+            "select": { "$ref": "#/$defs/select" }
+          }
+        },
+        {
+          "type": "object",
+          "title": "http_plain",
+          "description": "GET a URL that returns a bare IP as plain text.",
+          "required": ["type", "url"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "http_plain" },
+            "url": { "type": "string", "format": "uri" },
+            "headers": { "$ref": "#/$defs/headers" }
+          }
+        },
+        {
+          "type": "object",
+          "title": "http_json",
+          "description": "GET a URL that returns JSON; extract the IP from a key.",
+          "required": ["type", "url", "key"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "http_json" },
+            "url": { "type": "string", "format": "uri" },
+            "key": {
+              "type": "string",
+              "description": "Top-level key (e.g. \"ip\") or JSON pointer (e.g. \"/data/ip\")."
+            },
+            "headers": { "$ref": "#/$defs/headers" }
+          }
+        }
+      ]
+    },
+    "select": {
+      "type": "object",
+      "description": "Interface address selection filter.",
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "description": "global skips link-local and (IPv6) unique-local; any keeps them.",
+          "enum": ["global", "any"],
+          "default": "global"
+        },
+        "exclude_temporary": {
+          "type": "boolean",
+          "description": "Best-effort exclusion of IPv6 temporary/privacy addresses (not enforced; if-addrs lacks address flags).",
+          "default": false
+        }
+      }
+    },
+    "targets": {
+      "type": "object",
+      "required": ["provider"],
+      "additionalProperties": false,
+      "properties": {
+        "ttl": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "DNS record TTL (Cloudflare forces 1 when proxied).",
+          "default": 300
+        },
+        "proxied": {
+          "type": "boolean",
+          "description": "Cloudflare proxied (orange-cloud) flag.",
+          "default": false
+        },
+        "provider": { "$ref": "#/$defs/provider" },
+        "ipv4": {
+          "type": "array",
+          "description": "Domains to manage as A records.",
+          "items": { "type": "string" }
+        },
+        "ipv6": {
+          "type": "array",
+          "description": "Domains to manage as AAAA records.",
+          "items": { "type": "string" }
+        },
+        "dual": {
+          "type": "array",
+          "description": "Domains to manage as both A and AAAA records.",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "provider": {
+      "oneOf": [
+        {
+          "type": "object",
+          "title": "cloudflare",
+          "description": "Native Cloudflare provider.",
+          "required": ["type", "api_token"],
+          "additionalProperties": false,
+          "anyOf": [{ "required": ["zone_id"] }, { "required": ["zone"] }],
+          "properties": {
+            "type": { "const": "cloudflare" },
+            "api_token": { "type": "string", "description": "API token with DNS edit rights. Supports ${ENV}." },
+            "zone_id": { "type": "string", "description": "Zone id. Provide this or `zone`." },
+            "zone": { "type": "string", "description": "Zone name (resolved to id via API). Provide this or `zone_id`." }
+          }
+        },
+        {
+          "type": "object",
+          "title": "generic",
+          "description": "Generic templated GET/POST provider.",
+          "required": ["type", "update"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "generic" },
+            "update": { "$ref": "#/$defs/genericRequest" }
+          }
+        }
+      ]
+    },
+    "genericRequest": {
+      "type": "object",
+      "required": ["url"],
+      "additionalProperties": false,
+      "description": "Template fields support: profile, domain, record_type, family, ip, old_ip, ttl, proxied, zone.",
+      "properties": {
+        "method": { "type": "string", "default": "GET" },
+        "url": { "type": "string", "description": "Templated request URL." },
+        "headers": { "$ref": "#/$defs/headers" },
+        "body": { "type": "string", "description": "Templated request body (for POST etc.)." },
+        "success": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "Success criteria for the response.",
+          "properties": {
+            "status": {
+              "type": "array",
+              "items": { "type": "integer" },
+              "description": "Accepted HTTP status codes.",
+              "default": [200]
+            },
+            "body_contains": {
+              "type": "string",
+              "description": "Optional substring the response body must contain."
+            }
+          }
+        }
+      }
+    },
+    "notify": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Templated notifications fired on update outcomes.",
+      "properties": {
+        "on": {
+          "type": "array",
+          "description": "Events that trigger notifications.",
+          "items": { "enum": ["changed", "success", "error", "always"] }
+        },
+        "targets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/notifyTarget" }
+        }
+      }
+    },
+    "notifyTarget": {
+      "type": "object",
+      "required": ["url"],
+      "additionalProperties": false,
+      "description": "Template fields support provider fields plus: event, error, timestamp.",
+      "properties": {
+        "name": { "type": "string" },
+        "method": { "type": "string", "default": "GET" },
+        "url": { "type": "string", "description": "Templated URL." },
+        "headers": { "$ref": "#/$defs/headers" },
+        "body": { "type": "string", "description": "Templated body." }
+      }
+    }
+  }
+}

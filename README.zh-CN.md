@@ -60,7 +60,10 @@ ddnsondemand -c /etc/ddnsondemand/config.yaml daemon
 
 ## 配置
 
-完整且带注释的示例见 [`examples/config.yaml`](examples/config.yaml)。要点：
+完整且带注释的示例见 [`examples/config.yaml`](examples/config.yaml)。另提供 JSON
+Schema [`schema/config.schema.json`](schema/config.schema.json) 供编辑器校验与
+自动补全——示例配置首行已通过 `# yaml-language-server: $schema=...` modeline 引用
+它。要点：
 
 - `profiles.<name>.ip_sources.v4` / `.v6` 是**有序来源池**。所需协议栈由目标域名
   列表**自动推导**（`ipv4`/`dual` → 需要 v4，`ipv6`/`dual` → 需要 v6）；若某个被

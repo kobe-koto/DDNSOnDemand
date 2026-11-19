@@ -64,7 +64,10 @@ ddnsondemand -c /etc/ddnsondemand/config.yaml daemon
 ## Configuration
 
 See [`examples/config.yaml`](examples/config.yaml) for a complete, commented
-example. Key points:
+example. A JSON Schema is provided at
+[`schema/config.schema.json`](schema/config.schema.json) for editor validation
+and autocompletion — the example config already references it via a
+`# yaml-language-server: $schema=...` modeline on its first line. Key points:
 
 - `profiles.<name>.ip_sources.v4` / `.v6` are **ordered pools**. The required
   families are **derived from the target domain lists** (`ipv4`/`dual` → v4,
