@@ -1,0 +1,21 @@
+# Maintainer: kobe koto <k@koto.cc>
+# pkgver is set by CI from the release tag.
+pkgname=ddnsondemand
+pkgver=0.0.0
+pkgrel=0
+pkgdesc="On-demand / daemon DDNS client with Cloudflare and generic HTTP providers"
+url="https://github.com/kobe-koto/DDNSOnDemand"
+arch="x86_64"
+license="MIT"
+options="!check !strip"
+builddir="$srcdir"
+# Prebuilt files are staged next to this APKBUILD by CI.
+source="ddnsondemand ddnsondemand.openrc config.yaml README.md LICENSE"
+
+package() {
+	install -Dm755 "$srcdir"/ddnsondemand "$pkgdir"/usr/bin/ddnsondemand
+	install -Dm755 "$srcdir"/ddnsondemand.openrc "$pkgdir"/etc/init.d/ddnsondemand
+	install -Dm644 "$srcdir"/config.yaml "$pkgdir"/usr/share/doc/$pkgname/examples/config.yaml
+	install -Dm644 "$srcdir"/README.md "$pkgdir"/usr/share/doc/$pkgname/README.md
+	install -Dm644 "$srcdir"/LICENSE "$pkgdir"/usr/share/licenses/$pkgname/LICENSE
+}

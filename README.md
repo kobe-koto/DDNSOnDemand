@@ -24,6 +24,19 @@ trigger such as a systemd timer.
   and notifications fire only when something changes.
 - **Templated notifications** (GET/POST) on configurable events.
 
+## Install
+
+Each tagged release publishes prebuilt x86_64 Linux artifacts:
+
+- `…-x86_64-unknown-linux-gnu.tar.gz` — dynamically linked (glibc) binary.
+- `…-x86_64-unknown-linux-musl.tar.gz` — fully static (musl) binary, portable
+  across distros.
+- `ddnsondemand_<version>_amd64.deb` — Debian/Ubuntu package (systemd units).
+- `ddnsondemand-<version>-r0.apk` — Alpine package (OpenRC service); install with
+  `apk add --allow-untrusted ddnsondemand-*.apk`.
+
+Each file has a `.sha256` sidecar.
+
 ## Build
 
 ```sh

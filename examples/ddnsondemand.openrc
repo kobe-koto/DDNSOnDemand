@@ -1,0 +1,16 @@
+#!/sbin/openrc-run
+# OpenRC service for DDNSOnDemand (Alpine Linux).
+# Enable with: rc-update add ddnsondemand default && rc-service ddnsondemand start
+name="ddnsondemand"
+description="DDNSOnDemand DDNS client (daemon mode)"
+command="/usr/bin/ddnsondemand"
+command_args="--config /etc/ddnsondemand/config.yaml --state /var/lib/ddnsondemand/state.json daemon"
+command_background=true
+pidfile="/run/${RC_SVCNAME}.pid"
+output_log="/var/log/${RC_SVCNAME}.log"
+error_log="/var/log/${RC_SVCNAME}.log"
+
+depend() {
+	need net
+	after firewall
+}

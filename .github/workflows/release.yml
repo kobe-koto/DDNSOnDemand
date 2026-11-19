@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release:
-    name: Build and publish release
+    name: glibc (.tar.gz + .deb)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -46,7 +46,7 @@ jobs:
       - name: Generate checksums
         run: |
           cd dist
-          sha256sum * > SHA256SUMS
+          for f in *; do sha256sum "$f" > "$f.sha256"; done
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -56,4 +56,59 @@ jobs:
           files: |
             dist/*.tar.gz
             dist/*.deb
-            dist/SHA256SUMS
+            dist/*.sha256
+
+  musl:
+    name: musl static (.tar.gz + .apk)
+    runs-on: ubuntu-latest
+    needs: release
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build static musl binary (Alpine)
+        # rust:alpine targets x86_64-unknown-linux-musl, which links the CRT
+        # statically by default; build-base provides the C compiler ring needs.
+        run: |
+          docker run --rm -v "$PWD":/src -w /src rust:alpine \
+            sh -c 'apk add --no-cache build-base && cargo build --release --locked'
+
+      - name: Build .tar.gz
+        run: |
+          set -euo pipefail
+          PKG="ddnsondemand-${GITHUB_REF_NAME}-x86_64-unknown-linux-musl"
+          mkdir -p "dist/${PKG}"
+          cp target/release/ddnsondemand "dist/${PKG}/"
+          cp README.md README.zh-CN.md LICENSE "dist/${PKG}/"
+          cp -r examples "dist/${PKG}/"
+          tar -czf "dist/${PKG}.tar.gz" -C dist "${PKG}"
+          rm -rf "dist/${PKG}"
+
+      - name: Build .apk
+        run: |
+          set -euo pipefail
+          VER="${GITHUB_REF_NAME#v}"
+          mkdir -p apkroot dist
+          cp target/release/ddnsondemand examples/config.yaml README.md LICENSE \
+             examples/ddnsondemand.openrc apkroot/
+          cp packaging/apk/APKBUILD apkroot/APKBUILD
+          sed -i "s/^pkgver=.*/pkgver=${VER}/" apkroot/APKBUILD
+          docker run --rm -v "$PWD/apkroot":/pkg -w /pkg alpine:3.21 sh -c '
+            apk add --no-cache abuild &&
+            abuild-keygen -a -n &&
+            abuild -F checksum &&
+            abuild -F -P /pkg/out rootpkg'
+          find apkroot/out -name '*.apk' -exec cp {} dist/ \;
+
+      - name: Generate checksums
+        run: |
+          cd dist
+          for f in *; do sha256sum "$f" > "$f.sha256"; done
+
+      - name: Publish to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.apk
+            dist/*.sha256

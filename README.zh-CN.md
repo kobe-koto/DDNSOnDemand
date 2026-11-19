@@ -21,6 +21,18 @@
 - **差分更新**：最近一次的 IP 记录在状态文件中，仅在发生变化时才调用提供方与通知。
 - **模板化通知**（GET/POST），按可配置的事件触发。
 
+## 安装
+
+每个打了 tag 的 release 都会发布预编译的 x86_64 Linux 产物：
+
+- `…-x86_64-unknown-linux-gnu.tar.gz` —— 动态链接（glibc）二进制。
+- `…-x86_64-unknown-linux-musl.tar.gz` —— 完全静态（musl）二进制，跨发行版可移植。
+- `ddnsondemand_<版本>_amd64.deb` —— Debian/Ubuntu 包（含 systemd unit）。
+- `ddnsondemand-<版本>-r0.apk` —— Alpine 包（含 OpenRC 服务）；安装：
+  `apk add --allow-untrusted ddnsondemand-*.apk`。
+
+每个文件都附带 `.sha256` 校验文件。
+
 ## 构建
 
 ```sh
