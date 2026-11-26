@@ -23,7 +23,11 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build release binary
-        run: cargo build --release --locked
+        # Strip registry paths from the binary; see .github/scripts/remap-registry-flags.sh.
+        run: |
+          cargo fetch --locked
+          export RUSTFLAGS="$(sh .github/scripts/remap-registry-flags.sh)"
+          cargo build --release --locked
 
       - name: Build .tar.gz
         run: |
@@ -75,11 +79,17 @@ jobs:
         # own musl (>= 1.2.4) startup code applies them, so nothing on the target
         # system needs to understand RELR. Do not add it to the glibc build: that
         # would require glibc >= 2.36 at runtime.
+        #
+        # The remap flags strip registry paths from the binary; see
+        # .github/scripts/remap-registry-flags.sh. They need the container's
+        # CARGO_HOME, so they are computed inside it, after `cargo fetch`.
         run: |
           docker run --rm -v "$PWD":/src -w /src \
             -e RUSTFLAGS="-C link-arg=-Wl,-z,pack-relative-relocs" \
             rust:alpine \
-            sh -c 'apk add --no-cache build-base && cargo build --release --locked'
+            sh -c 'apk add --no-cache build-base && cargo fetch --locked &&
+                   RUSTFLAGS="$RUSTFLAGS $(sh .github/scripts/remap-registry-flags.sh)" \
+                   cargo build --release --locked'
 
       - name: Smoke-test static binary
         # Static, so it runs on the Ubuntu runner; catches a broken link/startup.
