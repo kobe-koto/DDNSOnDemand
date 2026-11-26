@@ -350,32 +350,32 @@ fn expand_env(value: &mut serde_norway::Value) -> Result<()> {
 
 /// Expand `${VAR}` / `${VAR:-default}` occurrences in a single string.
 fn expand_str(input: &str) -> Result<String> {
+    // Copy the text between references as whole &str slices. "${" and "}" are
+    // ASCII, so every slice boundary falls on a char boundary and non-ASCII
+    // text passes through intact.
     let mut out = String::with_capacity(input.len());
-    let bytes = input.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'$' && i + 1 < bytes.len() && bytes[i + 1] == b'{' {
-            let Some(end) = input[i + 2..].find('}') else {
-                bail!("unterminated '${{' in config value: {input}");
-            };
-            let inner = &input[i + 2..i + 2 + end];
-            let (name, default) = match inner.split_once(":-") {
-                Some((n, d)) => (n, Some(d)),
-                None => (inner, None),
-            };
-            match std::env::var(name) {
-                Ok(v) => out.push_str(&v),
-                Err(_) => match default {
-                    Some(d) => out.push_str(d),
-                    None => bail!("environment variable '{name}' is not set (referenced in config)"),
-                },
-            }
-            i = i + 2 + end + 1;
-        } else {
-            out.push(bytes[i] as char);
-            i += 1;
+    let mut rest = input;
+    while let Some(start) = rest.find("${") {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + 2..];
+        let Some(end) = after.find('}') else {
+            bail!("unterminated '${{' in config value: {input}");
+        };
+        let inner = &after[..end];
+        let (name, default) = match inner.split_once(":-") {
+            Some((n, d)) => (n, Some(d)),
+            None => (inner, None),
+        };
+        match std::env::var(name) {
+            Ok(v) => out.push_str(&v),
+            Err(_) => match default {
+                Some(d) => out.push_str(d),
+                None => bail!("environment variable '{name}' is not set (referenced in config)"),
+            },
         }
+        rest = &after[end + 1..];
     }
+    out.push_str(rest);
     Ok(out)
 }
 
@@ -399,6 +399,45 @@ mod tests {
     fn missing_env_without_default_errors() {
         std::env::remove_var("DDNS_TEST_NO_DEFAULT");
         assert!(expand_str("${DDNS_TEST_NO_DEFAULT}").is_err());
+    }
+
+    #[test]
+    fn expands_env_keeps_non_ascii_text() {
+        std::env::set_var("DDNS_TEST_UTF8", "值");
+        std::env::remove_var("DDNS_TEST_UTF8_MISSING");
+        assert_eq!(
+            expand_str("域名=${DDNS_TEST_UTF8}，缺省=${DDNS_TEST_UTF8_MISSING:-默认}。").unwrap(),
+            "域名=值，缺省=默认。"
+        );
+        assert_eq!(expand_str("é ü ✓ 🙂").unwrap(), "é ü ✓ 🙂");
+    }
+
+    #[test]
+    fn load_keeps_non_ascii_config_strings() {
+        // Every string value (mapping keys are not expanded) goes through
+        // ${ENV} expansion, not only the ones that contain a reference.
+        let yaml = r#"
+profiles:
+  home:
+    ip_sources:
+      v4: [{ type: http_plain, url: "https://example.com/ip" }]
+    targets:
+      provider:
+        type: generic
+        update:
+          url: "https://example.com/update?ip={{ip}}"
+      ipv4: [home.example.com]
+    notify:
+      on: [changed]
+      targets:
+        - name: 通知
+          url: "https://example.com/hook"
+          body: "域名={{domain}}，IP={{ip}}"
+"#;
+        let cfg = load_str(yaml).unwrap();
+        let target = &cfg.profiles["home"].notify.as_ref().unwrap().targets[0];
+        assert_eq!(target.name.as_deref(), Some("通知"));
+        assert_eq!(target.body.as_deref(), Some("域名={{domain}}，IP={{ip}}"));
     }
 
     #[test]
