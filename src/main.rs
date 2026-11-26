@@ -12,6 +12,7 @@ mod state;
 mod template;
 
 use std::path::PathBuf;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{bail, Context, Result};
 use clap::Parser;
@@ -24,9 +25,17 @@ use cli::{Cli, Command};
 /// CDNs reject requests without one (e.g. responding 403), so we always send it.
 pub const USER_AGENT: &str = concat!("ddnsondemand/", env!("CARGO_PKG_VERSION"));
 
-/// Current UTC timestamp as an RFC 3339 string (used in state and templates).
+/// Current UTC timestamp as an RFC 3339 string (used in state and templates),
+/// e.g. `2026-01-01T00:00:00Z`.
 pub fn now_rfc3339() -> String {
-    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    format_rfc3339(SystemTime::now())
+}
+
+fn format_rfc3339(t: SystemTime) -> String {
+    // humantime panics before 1970 and errors after year 9999. Clamp instead, so
+    // a badly wrong clock (e.g. no RTC) gives a wrong timestamp, not an abort.
+    const MAX: Duration = Duration::from_secs(253_402_300_799); // 9999-12-31T23:59:59Z
+    humantime::format_rfc3339_seconds(t.clamp(UNIX_EPOCH, UNIX_EPOCH + MAX)).to_string()
 }
 
 /// A DDNS client is overwhelmingly I/O-bound, so a single-threaded runtime
@@ -155,4 +164,24 @@ fn resolve_state_path(cli: Option<PathBuf>) -> PathBuf {
         return dir.join("state.json");
     }
     PathBuf::from("state.json")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formats_rfc3339_utc_seconds() {
+        // Same shape chrono's `to_rfc3339_opts(Secs, true)` produced: whole
+        // seconds (truncated, not rounded) and a `Z` suffix.
+        let t = UNIX_EPOCH + Duration::from_millis(1_518_568_087_900);
+        assert_eq!(format_rfc3339(t), "2018-02-14T00:28:07Z");
+    }
+
+    #[test]
+    fn clamps_out_of_range_clocks() {
+        assert_eq!(format_rfc3339(UNIX_EPOCH - Duration::from_secs(1)), "1970-01-01T00:00:00Z");
+        let far = UNIX_EPOCH + Duration::from_secs(300_000_000_000);
+        assert_eq!(format_rfc3339(far), "9999-12-31T23:59:59Z");
+    }
 }
