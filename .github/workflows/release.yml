@@ -69,9 +69,21 @@ jobs:
       - name: Build static musl binary (Alpine)
         # rust:alpine targets x86_64-unknown-linux-musl, which links the CRT
         # statically by default; build-base provides the C compiler ring needs.
+        #
+        # pack-relative-relocs stores the static-pie's relocations as RELR
+        # (~180 KB -> ~2 KB). It is safe here because the binary is static: its
+        # own musl (>= 1.2.4) startup code applies them, so nothing on the target
+        # system needs to understand RELR. Do not add it to the glibc build: that
+        # would require glibc >= 2.36 at runtime.
         run: |
-          docker run --rm -v "$PWD":/src -w /src rust:alpine \
+          docker run --rm -v "$PWD":/src -w /src \
+            -e RUSTFLAGS="-C link-arg=-Wl,-z,pack-relative-relocs" \
+            rust:alpine \
             sh -c 'apk add --no-cache build-base && cargo build --release --locked'
+
+      - name: Smoke-test static binary
+        # Static, so it runs on the Ubuntu runner; catches a broken link/startup.
+        run: target/release/ddnsondemand --version
 
       - name: Build .tar.gz
         run: |
