@@ -44,7 +44,7 @@ impl GenericProvider {
             .success
             .body_contains
             .as_ref()
-            .map_or(true, |needle| text.contains(needle));
+            .is_none_or(|needle| text.contains(needle));
 
         if !status_ok || !body_ok {
             bail!("generic provider rejected update: HTTP {status}, body: {text}");

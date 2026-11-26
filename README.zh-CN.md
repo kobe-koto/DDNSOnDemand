@@ -35,6 +35,8 @@
 
 ## 构建
 
+需要 Rust 1.88 或更高版本。
+
 ```sh
 cargo build --release
 # 产物位于 target/release/ddnsondemand

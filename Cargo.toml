@@ -2,7 +2,9 @@
 name = "ddnsondemand"
 version = "0.1.1"
 edition = "2021"
-rust-version = "1.80"
+# The real minimum of the locked dependencies (icu_* 2.4, via reqwest -> url ->
+# idna). Recheck when Cargo.lock changes: cargo refuses older compilers.
+rust-version = "1.88"
 license = "MIT"
 description = "On-demand / daemon DDNS client with per-family IP source pools, Cloudflare and generic HTTP providers, and templated notifications"
 repository = "https://github.com/kobe-koto/DDNSOnDemand"
