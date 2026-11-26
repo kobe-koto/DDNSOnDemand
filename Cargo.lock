@@ -161,12 +161,14 @@ dependencies = [
  "if-addrs",
  "minijinja",
  "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "serde_norway",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "webpki-roots",
  "wiremock",
 ]
 

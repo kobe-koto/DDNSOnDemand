@@ -58,8 +58,7 @@ struct RecordBody<'a> {
 
 impl CloudflareProvider {
     pub async fn new(token: &str, zone_id: Option<&str>, zone: Option<&str>) -> Result<Self> {
-        let client = reqwest::Client::builder()
-            .user_agent(crate::USER_AGENT)
+        let client = crate::http::client_builder()
             .timeout(std::time::Duration::from_secs(20))
             .build()?;
         let provider = Self {

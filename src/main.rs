@@ -3,6 +3,7 @@
 mod cli;
 mod config;
 mod engine;
+mod http;
 mod ip;
 mod logging;
 mod notify;

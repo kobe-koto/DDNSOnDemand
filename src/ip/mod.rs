@@ -52,13 +52,11 @@ pub struct StackClients {
 
 impl StackClients {
     pub fn new(timeout: Duration) -> Result<Self> {
-        let v4 = reqwest::Client::builder()
-            .user_agent(crate::USER_AGENT)
+        let v4 = crate::http::client_builder()
             .local_address(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
             .timeout(timeout)
             .build()?;
-        let v6 = reqwest::Client::builder()
-            .user_agent(crate::USER_AGENT)
+        let v6 = crate::http::client_builder()
             .local_address(IpAddr::V6(Ipv6Addr::UNSPECIFIED))
             .timeout(timeout)
             .build()?;

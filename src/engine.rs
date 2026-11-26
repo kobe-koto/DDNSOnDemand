@@ -33,8 +33,7 @@ impl Engine {
     ) -> Result<Self> {
         Ok(Self {
             clients,
-            notify_client: reqwest::Client::builder()
-                .user_agent(crate::USER_AGENT)
+            notify_client: crate::http::client_builder()
                 .timeout(std::time::Duration::from_secs(15))
                 .build()?,
             state,
