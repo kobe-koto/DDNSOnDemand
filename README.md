@@ -118,6 +118,13 @@ Available in generic-provider requests and notification URL/headers/body:
 | `{{error}}`     | Error message (failure notifications)     |
 | `{{timestamp}}` | RFC 3339 UTC timestamp                    |
 
+Templates are plain substitution. `{{ name }}` is replaced by the variable's
+value (spaces inside the braces are optional), and one trailing newline is
+dropped, so a YAML `|` block does not send it. `{{proxied}}` renders as
+`True` / `False`. Anything else is rejected when the config is loaded, so
+`ddnsondemand check` reports it: unknown names, filters such as
+`{{ ip | upper }}`, and `{% %}` / `{# #}` tags.
+
 ## systemd
 
 Install the binary to `/usr/bin/ddnsondemand`, put your config at

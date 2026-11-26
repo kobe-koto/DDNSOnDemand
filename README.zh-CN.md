@@ -113,6 +113,11 @@ Schema [`schema/config.schema.json`](schema/config.schema.json) 供编辑器校�
 | `{{error}}`       | 错误信息（失败通知）                   |
 | `{{timestamp}}`   | RFC 3339 UTC 时间戳                     |
 
+模板只做简单替换：`{{ name }}`（花括号内的空格可有可无）会被替换为对应变量的值，
+末尾的一个换行会被去掉（因此 YAML `|` 块不会多发一个换行）。`{{proxied}}` 渲染为
+`True` / `False`。其他写法，包括未知变量名、`{{ ip | upper }}` 这类过滤器，以及
+`{% %}` / `{# #}` 标签，都会在加载配置时报错，用 `ddnsondemand check` 即可发现。
+
 ## systemd
 
 将二进制安装到 `/usr/bin/ddnsondemand`，配置放在 `/etc/ddnsondemand/config.yaml`，

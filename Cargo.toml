@@ -32,7 +32,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["std", "fmt", "json", "smallvec", "tracing-log"] }
 anyhow = "1"
 if-addrs = "0.13"
-minijinja = "2"
 directories = "6"
 
 [dev-dependencies]

@@ -293,9 +293,37 @@ impl Config {
                     bail!("profile '{name}' cloudflare provider needs either 'zone_id' or 'zone'");
                 }
             }
+            if let ProviderConfig::Generic { update } = &profile.targets.provider {
+                validate_request_templates(&update.url, &update.headers, update.body.as_deref())
+                    .with_context(|| format!("profile '{name}' generic provider"))?;
+            }
+            for target in profile.notify.iter().flat_map(|n| &n.targets) {
+                validate_request_templates(&target.url, &target.headers, target.body.as_deref())
+                    .with_context(|| {
+                        let label = target.name.as_deref().unwrap_or(&target.url);
+                        format!("profile '{name}' notify target '{label}'")
+                    })?;
+            }
         }
         Ok(())
     }
+}
+
+/// Check every templated field of an outbound request. Header names are not
+/// templated, only their values.
+fn validate_request_templates(
+    url: &str,
+    headers: &BTreeMap<String, String>,
+    body: Option<&str>,
+) -> Result<()> {
+    crate::template::validate(url).context("url")?;
+    for (key, value) in headers {
+        crate::template::validate(value).with_context(|| format!("header '{key}'"))?;
+    }
+    if let Some(body) = body {
+        crate::template::validate(body).context("body")?;
+    }
+    Ok(())
 }
 
 /// Recursively expand `${VAR}` and `${VAR:-default}` inside every string value.
@@ -393,6 +421,45 @@ profiles:
         let cfg = load_str(yaml).unwrap();
         let p = &cfg.profiles["home"];
         assert_eq!(p.required_families(), (true, false));
+    }
+
+    #[test]
+    fn unsupported_template_fails_validation() {
+        let provider = r#"
+profiles:
+  home:
+    ip_sources:
+      v4: [{ type: http_plain, url: "https://example.com/ip" }]
+    targets:
+      provider:
+        type: generic
+        update:
+          url: "https://example.com/update?ip={{ ip | trim }}"
+      ipv4: [home.example.com]
+"#;
+        let err = load_str(provider).unwrap_err();
+        assert!(format!("{err:#}").contains("generic provider: url"), "{err:#}");
+
+        let notify = r#"
+profiles:
+  home:
+    ip_sources:
+      v4: [{ type: http_plain, url: "https://example.com/ip" }]
+    targets:
+      provider:
+        type: generic
+        update:
+          url: "https://example.com/update?ip={{ip}}"
+      ipv4: [home.example.com]
+    notify:
+      on: [changed]
+      targets:
+        - name: hook
+          url: "https://example.com/hook"
+          headers: { X-Ip: "{{ ipaddr }}" }
+"#;
+        let err = load_str(notify).unwrap_err();
+        assert!(format!("{err:#}").contains("notify target 'hook': header 'X-Ip'"), "{err:#}");
     }
 
     #[test]
