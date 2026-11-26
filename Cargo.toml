@@ -1,6 +1,6 @@
 [package]
 name = "ddnsondemand"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 # The real minimum of the locked dependencies (icu_* 2.4, via reqwest -> url ->
 # idna). Recheck when Cargo.lock changes: cargo refuses older compilers.
