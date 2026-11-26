@@ -20,7 +20,9 @@ serde_norway = "0.9"
 humantime-serde = "1"
 clap = { version = "4.5", features = ["derive"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["fmt", "json", "ansi"] }
+# Default features minus `ansi`: log lines go to journald / log files far more
+# often than to a terminal, and the fmt layer does not check for a TTY.
+tracing-subscriber = { version = "0.3", default-features = false, features = ["std", "fmt", "json", "smallvec", "tracing-log"] }
 anyhow = "1"
 if-addrs = "0.13"
 minijinja = "2"
