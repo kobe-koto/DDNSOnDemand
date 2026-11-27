@@ -5,7 +5,8 @@ use std::path::Path;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
+use tracing::level_filters::LevelFilter;
 
 /// Top-level configuration.
 #[derive(Debug, Clone, Deserialize)]
@@ -19,8 +20,10 @@ pub struct Config {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct LogConfig {
-    #[serde(default = "default_level")]
-    pub level: String,
+    /// Level for this program's own logs. Parsed at load, so a typo is a
+    /// config error rather than a silent fallback.
+    #[serde(default = "default_level", deserialize_with = "deserialize_level")]
+    pub level: LevelFilter,
     #[serde(default)]
     pub format: LogFormat,
 }
@@ -230,8 +233,38 @@ pub struct NotifyTarget {
 
 // ---- serde defaults ----
 
-fn default_level() -> String {
-    "info".to_string()
+fn default_level() -> LevelFilter {
+    LevelFilter::INFO
+}
+
+/// Accept `trace`, `debug`, `info`, `warn`, `error` or `off`, in any case.
+/// These are the documented levels plus `off`, which earlier versions also
+/// accepted. Anything else, e.g. `warning`, is an error. It used to be
+/// silently replaced by `info`.
+fn deserialize_level<'de, D: Deserializer<'de>>(deserializer: D) -> Result<LevelFilter, D::Error> {
+    // Take any YAML value, so that `level: 3` or `level: ~` get the same
+    // message naming log.level, not serde's generic "invalid type" error.
+    let raw = match serde_norway::Value::deserialize(deserializer)? {
+        serde_norway::Value::String(s) => s,
+        serde_norway::Value::Number(n) => n.to_string(),
+        serde_norway::Value::Bool(b) => b.to_string(),
+        serde_norway::Value::Null => "null".to_string(),
+        _ => "<not a scalar>".to_string(),
+    };
+    let level = match raw.to_ascii_lowercase().as_str() {
+        "trace" => LevelFilter::TRACE,
+        "debug" => LevelFilter::DEBUG,
+        "info" => LevelFilter::INFO,
+        "warn" => LevelFilter::WARN,
+        "error" => LevelFilter::ERROR,
+        "off" => LevelFilter::OFF,
+        _ => {
+            return Err(serde::de::Error::custom(format!(
+                "invalid log.level '{raw}': expected one of trace, debug, info, warn, error, off"
+            )))
+        }
+    };
+    Ok(level)
 }
 fn default_interval() -> Duration {
     Duration::from_secs(300)
@@ -549,6 +582,54 @@ profiles:
         let err = format!("{:#}", load_str(yaml).unwrap_err());
         assert!(!err.contains("s3cr3t-token"), "{err}");
         assert!(err.contains("notify target 'https://hooks.example.com/...': body"), "{err}");
+    }
+
+    fn with_log_level(level: &str) -> String {
+        format!(
+            r#"
+log:
+  level: {level}
+profiles:
+  home:
+    ip_sources:
+      v4: [{{ type: http_plain, url: "https://example.com/ip" }}]
+    targets:
+      provider:
+        type: generic
+        update:
+          url: "https://example.com/update?ip={{{{ip}}}}"
+      ipv4: [home.example.com]
+"#
+        )
+    }
+
+    #[test]
+    fn parses_log_levels_case_insensitively() {
+        for (raw, want) in [
+            ("trace", LevelFilter::TRACE),
+            ("debug", LevelFilter::DEBUG),
+            ("info", LevelFilter::INFO),
+            ("warn", LevelFilter::WARN),
+            ("WARN", LevelFilter::WARN),
+            ("Error", LevelFilter::ERROR),
+            ("off", LevelFilter::OFF),
+        ] {
+            assert_eq!(load_str(&with_log_level(raw)).unwrap().log.level, want, "{raw}");
+        }
+        // Omitted: defaults to info.
+        let yaml = with_log_level("info").replace("log:\n  level: info\n", "");
+        assert!(!yaml.contains("log:"), "{yaml}");
+        assert_eq!(load_str(&yaml).unwrap().log.level, LevelFilter::INFO);
+    }
+
+    #[test]
+    fn rejects_invalid_log_levels() {
+        // Strings, quoted numbers and empty strings, and non-string YAML values.
+        for raw in ["warning", "verbose", "'info,reqwest=debug'", "'3'", "''", "3", "true", "~", "", "[info]"] {
+            let err = format!("{:#}", load_str(&with_log_level(raw)).unwrap_err());
+            assert!(err.contains("invalid log.level"), "{raw}: {err}");
+            assert!(err.contains("expected one of trace, debug, info, warn, error, off"), "{raw}: {err}");
+        }
     }
 
     #[test]

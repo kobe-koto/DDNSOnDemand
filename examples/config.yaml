@@ -5,7 +5,7 @@
 # expanded from the process environment when the file is loaded.
 
 log:
-  level: info            # trace | debug | info | warn | error
+  level: info            # trace | debug | info | warn | error | off
   format: text           # text | json
 
 defaults:                # daemon-wide defaults, overridable per profile

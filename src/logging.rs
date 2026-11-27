@@ -12,21 +12,26 @@ use tracing_subscriber::prelude::*;
 /// per-target level filtering without pulling in the regex engine.
 pub fn init(cfg: &LogConfig, verbose: u8) {
     let level = match verbose {
-        0 => cfg.level.as_str(),
-        1 => "debug",
-        _ => "trace",
+        0 => cfg.level,
+        1 => LevelFilter::DEBUG,
+        _ => LevelFilter::TRACE,
     };
 
-    // Honour RUST_LOG if set and parseable; otherwise default this crate to the
-    // resolved level and everything else to warn.
-    let targets: Targets = std::env::var("RUST_LOG")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or_else(|| {
-            Targets::new()
-                .with_default(LevelFilter::WARN)
-                .with_target("ddnsondemand", level.parse().unwrap_or(LevelFilter::INFO))
-        });
+    // Honour RUST_LOG if it is set and parses. Otherwise default this crate to
+    // the resolved level and everything else to warn. An unparsable RUST_LOG
+    // is reported, not silently dropped. Logging is not up yet, hence stderr.
+    let from_env = std::env::var("RUST_LOG").ok().and_then(|raw| match raw.parse::<Targets>() {
+        Ok(targets) => Some(targets),
+        Err(e) => {
+            eprintln!("warning: ignoring RUST_LOG={raw:?}: {e}");
+            None
+        }
+    });
+    let targets = from_env.unwrap_or_else(|| {
+        Targets::new()
+            .with_default(LevelFilter::WARN)
+            .with_target("ddnsondemand", level)
+    });
 
     let registry = tracing_subscriber::registry();
     match cfg.format {
