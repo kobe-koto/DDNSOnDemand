@@ -1,10 +1,13 @@
 //! Templated GET/POST notifications fired on update outcomes.
 
+use std::borrow::Cow;
+
 use anyhow::{Context, Result};
 use reqwest::Method;
 use tracing::warn;
 
 use crate::config::{Event, NotifyConfig, NotifyTarget};
+use crate::http::redact;
 use crate::template::{render, RenderCtx};
 
 /// Outcome of processing a single record, used to decide which notifications fire.
@@ -50,12 +53,18 @@ pub async fn fire(
     }
     for target in &cfg.targets {
         if let Err(e) = send_one(client, target, ctx).await {
-            warn!(
-                target = target.name.as_deref().unwrap_or(&target.url),
-                error = %e,
-                "notification failed"
-            );
+            warn!(target = %target_label(target), error = %e, "notification failed");
         }
+    }
+}
+
+/// How a target is named in logs: its `name`, or else its redacted URL.
+/// Webhook URLs usually carry their secret (Slack, Discord, Telegram bot
+/// tokens sit in the path), so the URL is never printed in full.
+pub fn target_label(target: &NotifyTarget) -> Cow<'_, str> {
+    match &target.name {
+        Some(name) => Cow::Borrowed(name),
+        None => Cow::Owned(redact(&target.url)),
     }
 }
 
@@ -77,8 +86,10 @@ async fn send_one(
     }
     rb.send()
         .await
-        .with_context(|| format!("sending notification to {url}"))?
+        .map_err(reqwest::Error::without_url)
+        .with_context(|| format!("sending notification to {}", redact(&url)))?
         .error_for_status()
+        .map_err(reqwest::Error::without_url)
         .context("notification endpoint returned error status")?;
     Ok(())
 }
@@ -159,6 +170,43 @@ mod tests {
         let requests = server.received_requests().await.unwrap();
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0].body, br#"{"ip":"1.2.3.4"}"#);
+    }
+
+    fn target(url: String, name: Option<&str>) -> NotifyTarget {
+        NotifyTarget {
+            name: name.map(str::to_string),
+            method: "POST".into(),
+            url,
+            headers: BTreeMap::new(),
+            body: None,
+        }
+    }
+
+    #[test]
+    fn label_prefers_name_and_never_shows_the_full_url() {
+        let url = "https://hooks.slack.com/services/T0/B0/s3cr3t".to_string();
+        assert_eq!(target_label(&target(url.clone(), Some("slack"))), "slack");
+        assert_eq!(target_label(&target(url, None)), "https://hooks.slack.com/...");
+    }
+
+    #[tokio::test]
+    async fn errors_do_not_leak_webhook_secrets() {
+        // Error status from the endpoint.
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(403))
+            .mount(&server)
+            .await;
+        let t = target(format!("{}/bot{{{{event}}}}s3cr3t/send?key=s3cr3t", server.uri()), None);
+        let e = send_one(&reqwest::Client::new(), &t, &ctx()).await.unwrap_err();
+        assert!(!format!("{e:#}").contains("s3cr3t"), "{e:#}");
+        assert!(format!("{e:#}").contains("403"), "{e:#}");
+
+        // Connection failure (nothing listens on port 1).
+        let t = target("http://127.0.0.1:1/services/s3cr3t".into(), None);
+        let e = send_one(&reqwest::Client::new(), &t, &ctx()).await.unwrap_err();
+        assert!(!format!("{e:#}").contains("s3cr3t"), "{e:#}");
+        assert!(format!("{e:#}").contains("sending notification to http://127.0.0.1:1/..."), "{e:#}");
     }
 
     #[tokio::test]

@@ -300,7 +300,7 @@ impl Config {
             for target in profile.notify.iter().flat_map(|n| &n.targets) {
                 validate_request_templates(&target.url, &target.headers, target.body.as_deref())
                     .with_context(|| {
-                        let label = target.name.as_deref().unwrap_or(&target.url);
+                        let label = crate::notify::target_label(target);
                         format!("profile '{name}' notify target '{label}'")
                     })?;
             }
@@ -499,6 +499,56 @@ profiles:
 "#;
         let err = load_str(notify).unwrap_err();
         assert!(format!("{err:#}").contains("notify target 'hook': header 'X-Ip'"), "{err:#}");
+    }
+
+    #[test]
+    fn template_errors_do_not_echo_expanded_secrets() {
+        std::env::set_var("DDNS_TEST_TOKEN", "s3cr3t-token");
+        let yaml = r#"
+profiles:
+  home:
+    ip_sources:
+      v4: [{ type: http_plain, url: "https://example.com/ip" }]
+    targets:
+      provider:
+        type: generic
+        update:
+          url: "https://dyn.example.net/u?token=${DDNS_TEST_TOKEN}&ip={{ ip | trim }}"
+      ipv4: [home.example.com]
+"#;
+        let err = format!("{:#}", load_str(yaml).unwrap_err());
+        assert!(!err.contains("s3cr3t-token"), "{err}");
+        // Still says where the problem is and what it is.
+        assert!(err.contains("profile 'home' generic provider: url: invalid template"), "{err}");
+        assert!(err.contains("{{ ip | trim }}"), "{err}");
+
+        // A brace typo makes the reported placeholder run over the token.
+        let typo = yaml.replace("&ip={{ ip | trim }}", "&ip={{ip}&t=${DDNS_TEST_TOKEN}&h={{domain}}");
+        let err = format!("{:#}", load_str(&typo).unwrap_err());
+        assert!(!err.contains("s3cr3t-token"), "{err}");
+        assert!(err.contains("generic provider: url: invalid template"), "{err}");
+
+        // A notify target without a name is labelled by its redacted URL.
+        let yaml = r#"
+profiles:
+  home:
+    ip_sources:
+      v4: [{ type: http_plain, url: "https://example.com/ip" }]
+    targets:
+      provider:
+        type: generic
+        update:
+          url: "https://dyn.example.net/u?ip={{ip}}"
+      ipv4: [home.example.com]
+    notify:
+      on: [error]
+      targets:
+        - url: "https://hooks.example.com/services/${DDNS_TEST_TOKEN}"
+          body: "{{ nope }}"
+"#;
+        let err = format!("{:#}", load_str(yaml).unwrap_err());
+        assert!(!err.contains("s3cr3t-token"), "{err}");
+        assert!(err.contains("notify target 'https://hooks.example.com/...': body"), "{err}");
     }
 
     #[test]

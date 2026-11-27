@@ -6,6 +6,7 @@ use tracing::info;
 
 use super::Applied;
 use crate::config::GenericRequest;
+use crate::http::redact;
 use crate::template::{render, RenderCtx};
 
 pub struct GenericProvider {
@@ -34,7 +35,13 @@ impl GenericProvider {
             rb = rb.body(render(body, ctx)?);
         }
 
-        let resp = rb.send().await.with_context(|| format!("requesting {url}"))?;
+        // The rendered URL often holds the update token, so errors show only
+        // its origin, and reqwest's error is stripped of the full URL.
+        let resp = rb
+            .send()
+            .await
+            .map_err(reqwest::Error::without_url)
+            .with_context(|| format!("requesting {}", redact(&url)))?;
         let status = resp.status().as_u16();
         let text = resp.text().await.unwrap_or_default();
 
@@ -109,6 +116,17 @@ mod tests {
         let url = format!("{}/update?ip={{{{ip}}}}", server.uri());
         let p = GenericProvider::new(req(url, Some("good"))).unwrap();
         assert_eq!(p.ensure(&ctx("1.2.3.4")).await.unwrap(), Applied::Changed);
+    }
+
+    #[tokio::test]
+    async fn errors_do_not_leak_the_update_token() {
+        // Nothing listens on port 1, so the request itself fails.
+        let p = GenericProvider::new(req("http://127.0.0.1:1/update?token=s3cr3t&ip={{ip}}".into(), None)).unwrap();
+        let e = p.ensure(&ctx("1.2.3.4")).await.unwrap_err();
+        assert!(!format!("{e:#}").contains("s3cr3t"), "{e:#}");
+        assert!(format!("{e:#}").contains("requesting http://127.0.0.1:1/..."), "{e:#}");
+        // The engine forwards this text to failure notifications as {{error}}.
+        assert!(!e.to_string().contains("s3cr3t"));
     }
 
     #[tokio::test]

@@ -155,6 +155,12 @@ at `/var/lib/ddnsondemand/state.json`.
   engine only calls it when the state indicates a change, and reports success.
 - Each profile's families are resolved independently; a failure in one family
   does not block the others or other profiles.
+- When a request fails, its URL is shown only as `scheme://host[:port]/...` in
+  log lines, error messages and the `{{error}}` template variable. That keeps
+  tokens in query strings, webhook paths or `user:password@` out of logs and
+  out of failure notifications. Template errors do not quote the template
+  either. A response body that a server sends back is still quoted as-is.
+  Give notify targets a `name` to tell them apart in logs.
 
 ## License
 

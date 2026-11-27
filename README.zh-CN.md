@@ -147,6 +147,11 @@ Schema [`schema/config.schema.json`](schema/config.schema.json) 供编辑器校�
 - 通用提供方无法区分“已变化”与“本就一致”；引擎仅在状态显示发生变化时才调用它，
   并按成功处理。
 - 每个 profile 的各协议栈相互独立解析；某一协议栈失败不会阻塞其他协议栈或其他 profile。
+- 请求失败时，日志、错误信息和模板变量 `{{error}}` 中的 URL 只显示为
+  `scheme://host[:port]/...`。这样，查询参数、webhook 路径或 `user:password@`
+  里的 token 不会写进日志，也不会随失败通知发出。模板报错同样不会引用模板原文。
+  服务器返回的响应内容仍会原样引用。可以给通知目标设置 `name`，以便在日志中
+  区分它们。
 
 ## 许可证
 

@@ -6,6 +6,7 @@ use std::net::IpAddr;
 use anyhow::{anyhow, Context, Result};
 
 use super::{check_family, Family};
+use crate::http::redact;
 
 pub async fn resolve_http_plain(
     client: &reqwest::Client,
@@ -13,23 +14,17 @@ pub async fn resolve_http_plain(
     headers: &BTreeMap<String, String>,
     family: Family,
 ) -> Result<IpAddr> {
-    let mut rb = client.get(url);
-    for (k, v) in headers {
-        rb = rb.header(k, v);
-    }
-    let text = rb
-        .send()
-        .await
-        .with_context(|| format!("requesting {url}"))?
-        .error_for_status()
-        .with_context(|| format!("non-success status from {url}"))?
+    let shown = redact(url);
+    let text = get(client, url, headers, &shown)
+        .await?
         .text()
         .await
-        .with_context(|| format!("reading body from {url}"))?;
+        .map_err(reqwest::Error::without_url)
+        .with_context(|| format!("reading body from {shown}"))?;
     let ip: IpAddr = text
         .trim()
         .parse()
-        .with_context(|| format!("parsing '{}' from {url} as an IP", text.trim()))?;
+        .with_context(|| format!("parsing '{}' from {shown} as an IP", text.trim()))?;
     check_family(ip, family)
 }
 
@@ -40,24 +35,42 @@ pub async fn resolve_http_json(
     headers: &BTreeMap<String, String>,
     family: Family,
 ) -> Result<IpAddr> {
+    let shown = redact(url);
+    let value: serde_json::Value = get(client, url, headers, &shown)
+        .await?
+        .json()
+        .await
+        .map_err(reqwest::Error::without_url)
+        .with_context(|| format!("decoding JSON from {shown}"))?;
+    let raw = extract_key(&value, key)?;
+    let ip: IpAddr = raw
+        .parse()
+        .with_context(|| format!("parsing '{raw}' (key '{key}') from {shown} as an IP"))?;
+    check_family(ip, family)
+}
+
+/// GET `url` and return the response if its status is a success.
+///
+/// IP source URLs can carry an API token (e.g. `https://ipinfo.io/json?token=`),
+/// so errors name the URL only as `shown`, its redacted form. reqwest's own
+/// errors would append the full URL, so it is stripped from them.
+async fn get(
+    client: &reqwest::Client,
+    url: &str,
+    headers: &BTreeMap<String, String>,
+    shown: &str,
+) -> Result<reqwest::Response> {
     let mut rb = client.get(url);
     for (k, v) in headers {
         rb = rb.header(k, v);
     }
-    let value: serde_json::Value = rb
-        .send()
+    rb.send()
         .await
-        .with_context(|| format!("requesting {url}"))?
+        .map_err(reqwest::Error::without_url)
+        .with_context(|| format!("requesting {shown}"))?
         .error_for_status()
-        .with_context(|| format!("non-success status from {url}"))?
-        .json()
-        .await
-        .with_context(|| format!("decoding JSON from {url}"))?;
-    let raw = extract_key(&value, key)?;
-    let ip: IpAddr = raw
-        .parse()
-        .with_context(|| format!("parsing '{raw}' (key '{key}') from {url} as an IP"))?;
-    check_family(ip, family)
+        .map_err(reqwest::Error::without_url)
+        .with_context(|| format!("non-success status from {shown}"))
 }
 
 /// Extract a string value using either a JSON pointer (`/a/b`) or a top-level key.
@@ -122,6 +135,36 @@ mod tests {
             .await;
         let err = resolve_http_plain(&reqwest::Client::new(), &server.uri(), &BTreeMap::new(), Family::V4).await;
         assert!(err.is_err());
+    }
+
+    /// Every message in the error chain, as `{e:#}` prints it (`check --resolve`
+    /// and the fatal error line do).
+    fn chain(e: &anyhow::Error) -> String {
+        format!("{e:#}")
+    }
+
+    #[tokio::test]
+    async fn errors_do_not_leak_url_secrets() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+        let client = reqwest::Client::new();
+        let no_headers = BTreeMap::new();
+
+        // Non-success status.
+        let url = format!("{}/ip?token=s3cr3t", server.uri());
+        let e = resolve_http_plain(&client, &url, &no_headers, Family::V4).await.unwrap_err();
+        assert!(!chain(&e).contains("s3cr3t"), "{e:#}");
+        assert!(chain(&e).contains(&format!("non-success status from {}/...", server.uri())), "{e:#}");
+        assert!(chain(&e).contains("500"), "{e:#}");
+
+        // Connection failure (nothing listens on port 1).
+        let url = "http://127.0.0.1:1/ip/s3cr3t?token=s3cr3t";
+        let e = resolve_http_json(&client, url, "ip", &no_headers, Family::V4).await.unwrap_err();
+        assert!(!chain(&e).contains("s3cr3t"), "{e:#}");
+        assert!(chain(&e).contains("requesting http://127.0.0.1:1/..."), "{e:#}");
     }
 
     #[tokio::test]

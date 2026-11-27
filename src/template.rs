@@ -71,8 +71,11 @@ impl RenderCtx {
 }
 
 /// Render a single template string against the context.
+///
+/// Errors never quote `source`. By now `${ENV}` references in it are expanded,
+/// so it can hold a token. The callers' context names the field instead.
 pub fn render(source: &str, ctx: &RenderCtx) -> Result<String> {
-    render_inner(source, ctx).with_context(|| format!("rendering template: {source}"))
+    render_inner(source, ctx).context("rendering template")
 }
 
 /// Check that `source` would render. Used at config load, so that `check`
@@ -80,7 +83,7 @@ pub fn render(source: &str, ctx: &RenderCtx) -> Result<String> {
 pub fn validate(source: &str) -> Result<()> {
     render_inner(source, &RenderCtx::default())
         .map(drop)
-        .with_context(|| format!("invalid template: {source}"))
+        .context("invalid template")
 }
 
 fn render_inner(source: &str, ctx: &RenderCtx) -> Result<String> {
@@ -103,18 +106,34 @@ fn render_inner(source: &str, ctx: &RenderCtx) -> Result<String> {
         let Some(end) = after.find("}}") else {
             bail!("unterminated '{{{{' (missing '}}}}')");
         };
-        let name = after[..end].trim();
-        if !ctx.write_var(name, &mut out) {
+        let inner = &after[..end];
+        if !ctx.write_var(inner.trim(), &mut out) {
+            let supported = VARIABLES.join(", ");
+            if quotable(inner) {
+                bail!("unsupported placeholder '{{{{{inner}}}}}': only {{{{ name }}}} with one of {supported} is supported");
+            }
             bail!(
-                "unsupported placeholder '{{{{{}}}}}': only {{{{ name }}}} with one of {} is supported",
-                &after[..end],
-                VARIABLES.join(", ")
+                "unsupported placeholder (not quoted: it runs over other text, so check for a missing \
+                 or extra brace): only {{{{ name }}}} with one of {supported} is supported"
             );
         }
         rest = &after[end + 2..];
     }
     out.push_str(rest);
     Ok(out)
+}
+
+/// Whether a rejected placeholder may be quoted in an error message.
+///
+/// The template has `${ENV}` values expanded, and a brace typo makes the
+/// "placeholder" run on to the next `}}` across literal text, as in
+/// `?ip={{ip}&token=<secret>&host={{domain}}`. Quote only what looks like a
+/// Jinja expression (`ip | upper`, `- ip -`, `ipv4`): short, short words, and
+/// no braces or URL punctuation.
+fn quotable(inner: &str) -> bool {
+    inner.len() <= 40
+        && inner.split_whitespace().all(|word| word.len() <= 16)
+        && inner.chars().all(|c| c.is_ascii_alphanumeric() || " _|.,()~'\"+-".contains(c))
 }
 
 #[cfg(test)]
@@ -194,6 +213,24 @@ mod tests {
             assert!(format!("{err:#}").contains("blocks are not supported"), "{t}: {err:#}");
             assert!(validate(t).is_err(), "{t}");
         }
+    }
+
+    #[test]
+    fn does_not_quote_a_placeholder_that_runs_over_other_text() {
+        // A missing '}' after `ip` makes the placeholder reach the next "}}",
+        // across the (expanded) token.
+        for t in [
+            "https://x/u?ip={{ip}&token=S3CR3T&host={{domain}}",
+            "https://x/u?ip={{ip&token=S3CR3T}}",
+            "Bearer {{ip S3CR3TS3CR3TS3CR3TS3CR3T}}",
+        ] {
+            let err = format!("{:#}", render(t, &ctx()).unwrap_err());
+            assert!(!err.contains("S3CR3T"), "{t}: {err}");
+            assert!(err.contains("missing or extra brace"), "{t}: {err}");
+        }
+        // Expression-like placeholders are still quoted, which helps locate them.
+        let err = format!("{:#}", render("x={{ ip | replace('.', '-') }}", &ctx()).unwrap_err());
+        assert!(err.contains("'{{ ip | replace('.', '-') }}'"), "{err}");
     }
 
     #[test]
