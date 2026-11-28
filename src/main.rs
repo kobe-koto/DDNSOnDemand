@@ -9,6 +9,7 @@ mod logging;
 mod notify;
 mod provider;
 mod run;
+mod secret;
 mod state;
 mod template;
 
@@ -44,9 +45,12 @@ fn format_rfc3339(t: SystemTime) -> String {
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
     if let Err(e) = real_main().await {
-        // Logging may not be initialised yet, so also print to stderr.
+        // Logging may not be initialised yet, so also print to stderr. Both
+        // paths mask any registered secret: the log writer does it for the
+        // event, and the direct print does it here. A config-load error was
+        // already scrubbed at the source, so masking it again is a no-op.
         error!(error = %e, "fatal");
-        eprintln!("error: {e:#}");
+        eprintln!("error: {}", secret::mask(&format!("{e:#}")));
         std::process::exit(1);
     }
 }
@@ -118,7 +122,9 @@ async fn check(config: &config::Config, resolve: bool) -> Result<()> {
 fn report(_profile: &str, family: &str, result: Result<std::net::IpAddr>) {
     match result {
         Ok(ip) => println!("  {family}: {ip}"),
-        Err(e) => println!("  {family}: ERROR: {e:#}"),
+        // An IP-source error can carry a response body that echoes a token we
+        // sent; this print bypasses the log writer, so mask it here.
+        Err(e) => println!("  {family}: ERROR: {}", secret::mask(&format!("{e:#}"))),
     }
 }
 

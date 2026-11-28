@@ -159,8 +159,14 @@ at `/var/lib/ddnsondemand/state.json`.
   log lines, error messages and the `{{error}}` template variable. That keeps
   tokens in query strings, webhook paths or `user:password@` out of logs and
   out of failure notifications. Template errors do not quote the template
-  either. A response body that a server sends back is still quoted as-is.
-  Give notify targets a `name` to tell them apart in logs.
+  either. Give notify targets a `name` to tell them apart in logs.
+- Any value pulled in from the environment through `${VAR}` is masked to `***`
+  wherever it would otherwise be printed: logs, error messages, `check` output,
+  and the `{{error}}` forwarded to notifications. This catches a token a server
+  echoes back inside a response body, and a config value repeated in a type
+  error. A secret written **literally** in the config file (not via `${VAR}`),
+  and any other response-body content, is **not** masked, so keep secrets in the
+  environment and `${VAR}` them in.
 
 ## License
 

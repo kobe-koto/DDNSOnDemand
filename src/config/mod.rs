@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::time::Duration;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Deserializer};
 use tracing::level_filters::LevelFilter;
 
@@ -288,21 +288,43 @@ fn default_success_status() -> Vec<u16> {
 // ---- loading ----
 
 /// Load, expand `${ENV}` references and validate a configuration file.
+///
+/// Registers every value `${ENV}` expansion substituted in with
+/// [`crate::secret`], so it is masked out of logs, errors and notifications.
 pub fn load(path: &Path) -> Result<Config> {
     let text = std::fs::read_to_string(path)
         .with_context(|| format!("reading config file {}", path.display()))?;
-    load_str(&text)
+    let (config, secrets) = load_inner(&text)?;
+    crate::secret::register(&secrets);
+    Ok(config)
 }
 
-/// Same as [`load`] but from an in-memory string (used by tests).
+/// Same as [`load`] but from an in-memory string, and without touching the
+/// process-wide secret set (used by tests).
+#[cfg(test)]
 pub fn load_str(text: &str) -> Result<Config> {
+    load_inner(text).map(|(config, _)| config)
+}
+
+/// Parse, expand and validate, returning the config and the list of values that
+/// `${ENV}` expansion pulled in from the environment.
+///
+/// Once expansion has run, any later error may quote an expanded value: serde's
+/// "invalid type" message repeats the offending scalar, and a stray value can
+/// reach a validation message. Those two error paths are scrubbed here with the
+/// per-load list, since they are produced before the global set is registered.
+fn load_inner(text: &str) -> Result<(Config, Vec<String>)> {
     let mut value: serde_norway::Value =
         serde_norway::from_str(text).context("parsing YAML config")?;
-    expand_env(&mut value)?;
-    let config: Config =
-        serde_norway::from_value(value).context("deserializing config structure")?;
-    config.validate()?;
-    Ok(config)
+    let mut secrets = Vec::new();
+    expand_env(&mut value, &mut secrets)?;
+    let config: Config = serde_norway::from_value(value)
+        .map_err(|e| anyhow!(crate::secret::mask_with(&e.to_string(), &secrets)))
+        .context("deserializing config structure")?;
+    config
+        .validate()
+        .map_err(|e| anyhow!(crate::secret::mask_with(&format!("{e:#}"), &secrets)))?;
+    Ok((config, secrets))
 }
 
 impl Config {
@@ -359,21 +381,22 @@ fn validate_request_templates(
     Ok(())
 }
 
-/// Recursively expand `${VAR}` and `${VAR:-default}` inside every string value.
-fn expand_env(value: &mut serde_norway::Value) -> Result<()> {
+/// Recursively expand `${VAR}` and `${VAR:-default}` inside every string value,
+/// appending each value taken from the environment to `secrets`.
+fn expand_env(value: &mut serde_norway::Value, secrets: &mut Vec<String>) -> Result<()> {
     use serde_norway::Value;
     match value {
         Value::String(s) => {
-            *s = expand_str(s)?;
+            *s = expand_str(s, secrets)?;
         }
         Value::Sequence(seq) => {
             for v in seq {
-                expand_env(v)?;
+                expand_env(v, secrets)?;
             }
         }
         Value::Mapping(map) => {
             for (_k, v) in map.iter_mut() {
-                expand_env(v)?;
+                expand_env(v, secrets)?;
             }
         }
         _ => {}
@@ -381,8 +404,10 @@ fn expand_env(value: &mut serde_norway::Value) -> Result<()> {
     Ok(())
 }
 
-/// Expand `${VAR}` / `${VAR:-default}` occurrences in a single string.
-fn expand_str(input: &str) -> Result<String> {
+/// Expand `${VAR}` / `${VAR:-default}` occurrences in a single string. Each
+/// value read from the environment is appended to `secrets` (but not a literal
+/// `:-default`, which is config text, not an environment secret).
+fn expand_str(input: &str, secrets: &mut Vec<String>) -> Result<String> {
     // Copy the text between references as whole &str slices. "${" and "}" are
     // ASCII, so every slice boundary falls on a char boundary and non-ASCII
     // text passes through intact.
@@ -400,7 +425,10 @@ fn expand_str(input: &str) -> Result<String> {
             None => (inner, None),
         };
         match std::env::var(name) {
-            Ok(v) => out.push_str(&v),
+            Ok(v) => {
+                secrets.push(v.clone());
+                out.push_str(&v);
+            }
             Err(_) => match default {
                 Some(d) => out.push_str(d),
                 None => bail!("environment variable '{name}' is not set (referenced in config)"),
@@ -419,19 +447,25 @@ mod tests {
     #[test]
     fn expands_env_with_default() {
         std::env::remove_var("DDNS_TEST_MISSING");
-        assert_eq!(expand_str("x=${DDNS_TEST_MISSING:-fallback}").unwrap(), "x=fallback");
+        let mut secrets = Vec::new();
+        assert_eq!(expand_str("x=${DDNS_TEST_MISSING:-fallback}", &mut secrets).unwrap(), "x=fallback");
+        // A `:-default` is config text, not an environment secret.
+        assert!(secrets.is_empty(), "{secrets:?}");
     }
 
     #[test]
     fn expands_env_present() {
         std::env::set_var("DDNS_TEST_PRESENT", "abc");
-        assert_eq!(expand_str("t=${DDNS_TEST_PRESENT}").unwrap(), "t=abc");
+        let mut secrets = Vec::new();
+        assert_eq!(expand_str("t=${DDNS_TEST_PRESENT}", &mut secrets).unwrap(), "t=abc");
+        // The environment value is collected for masking, regardless of length.
+        assert_eq!(secrets, ["abc"]);
     }
 
     #[test]
     fn missing_env_without_default_errors() {
         std::env::remove_var("DDNS_TEST_NO_DEFAULT");
-        assert!(expand_str("${DDNS_TEST_NO_DEFAULT}").is_err());
+        assert!(expand_str("${DDNS_TEST_NO_DEFAULT}", &mut Vec::new()).is_err());
     }
 
     #[test]
@@ -439,10 +473,10 @@ mod tests {
         std::env::set_var("DDNS_TEST_UTF8", "值");
         std::env::remove_var("DDNS_TEST_UTF8_MISSING");
         assert_eq!(
-            expand_str("域名=${DDNS_TEST_UTF8}，缺省=${DDNS_TEST_UTF8_MISSING:-默认}。").unwrap(),
+            expand_str("域名=${DDNS_TEST_UTF8}，缺省=${DDNS_TEST_UTF8_MISSING:-默认}。", &mut Vec::new()).unwrap(),
             "域名=值，缺省=默认。"
         );
-        assert_eq!(expand_str("é ü ✓ 🙂").unwrap(), "é ü ✓ 🙂");
+        assert_eq!(expand_str("é ü ✓ 🙂", &mut Vec::new()).unwrap(), "é ü ✓ 🙂");
     }
 
     #[test]
@@ -582,6 +616,26 @@ profiles:
         let err = format!("{:#}", load_str(yaml).unwrap_err());
         assert!(!err.contains("s3cr3t-token"), "{err}");
         assert!(err.contains("notify target 'https://hooks.example.com/...': body"), "{err}");
+    }
+
+    #[test]
+    fn type_errors_do_not_echo_expanded_secrets() {
+        // A value long enough to be treated as a secret, placed where serde
+        // expects a struct. serde's "invalid type" message repeats the value.
+        std::env::set_var("DDNS_TEST_TYPEERR", "s3cr3t-abcdefgh");
+        let yaml = r#"
+profiles:
+  home:
+    ip_sources:
+      v4: [{ type: http_plain, url: "https://example.com/ip" }]
+    targets:
+      provider: "${DDNS_TEST_TYPEERR}"
+      ipv4: [home.example.com]
+"#;
+        let err = format!("{:#}", load_str(yaml).unwrap_err());
+        assert!(!err.contains("s3cr3t-abcdefgh"), "{err}");
+        // The value was there (so the test is not vacuous) and got masked.
+        assert!(err.contains("***"), "{err}");
     }
 
     fn with_log_level(level: &str) -> String {

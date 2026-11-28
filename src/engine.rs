@@ -151,7 +151,9 @@ impl Engine {
                 error!(profile = profile_name, %domain, rtype = rtype.as_str(), error = %e, "update failed");
                 let fail_ctx = RenderCtx {
                     event: Outcome::Failed.as_str().to_string(),
-                    error: e.to_string(),
+                    // The error may hold a response body that echoes a token we
+                    // sent; this reaches the outside world as `{{error}}`.
+                    error: crate::secret::mask(&e.to_string()),
                     ..ctx
                 };
                 self.maybe_notify(profile, Outcome::Failed, &fail_ctx).await;
@@ -184,7 +186,9 @@ impl Engine {
             proxied,
             zone: zone.to_string(),
             event: outcome.as_str().to_string(),
-            error: error.to_string(),
+            // `{{error}}` can be forwarded to another service; a resolver error
+            // may echo back a token we sent. Empty strings mask to empty.
+            error: crate::secret::mask(error),
             timestamp: crate::now_rfc3339(),
         }
     }
