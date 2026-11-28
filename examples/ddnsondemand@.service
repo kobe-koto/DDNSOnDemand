@@ -1,0 +1,30 @@
+[Unit]
+# Per-profile daemon. `systemctl enable --now ddnsondemand@home` runs only the
+# `home` profile from the shared config, as its own service you can start, stop,
+# restart and follow (`journalctl -u ddnsondemand@home`) independently. Use the
+# plain ddnsondemand.service instead to run every profile in one process.
+Description=DDNSOnDemand (daemon mode, profile %i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Store secrets here as KEY=VALUE (CF_API_TOKEN=..., CF_ZONE_ID=..., etc.)
+EnvironmentFile=/etc/ddnsondemand/env
+# One shared config holds every profile; --profile %i limits this instance to
+# the one named after the "@". Each instance keeps its own state file, so
+# running several at once never writes the same file.
+ExecStart=/usr/bin/ddnsondemand --config /etc/ddnsondemand/config.yaml --state /var/lib/ddnsondemand/state-%i.json --profile %i daemon
+Restart=on-failure
+RestartSec=10
+
+# Hardening
+DynamicUser=yes
+StateDirectory=ddnsondemand
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

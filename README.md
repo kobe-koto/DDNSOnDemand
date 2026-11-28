@@ -133,10 +133,18 @@ Install the binary to `/usr/bin/ddnsondemand`, put your config at
 `/etc/ddnsondemand/config.yaml` and secrets in `/etc/ddnsondemand/env`
 (`KEY=VALUE` lines). Then use either:
 
-- **Daemon**: `examples/ddnsondemand.service`
+- **Daemon** (all profiles in one process): `examples/ddnsondemand.service`
   ```sh
   systemctl enable --now ddnsondemand.service
   ```
+- **Daemon, one service per profile**: `examples/ddnsondemand@.service`
+  ```sh
+  systemctl enable --now ddnsondemand@home ddnsondemand@work
+  ```
+  Each instance runs the one profile named after the `@` (`--profile`), so you
+  can start, stop, restart and follow each independently
+  (`journalctl -u ddnsondemand@home`). Instances share the config but keep
+  separate state files (`state-<profile>.json`).
 - **One-shot + timer**: `examples/ddnsondemand-oneshot.service` and
   `examples/ddnsondemand.timer`
   ```sh
@@ -144,7 +152,7 @@ Install the binary to `/usr/bin/ddnsondemand`, put your config at
   ```
 
 The units use `DynamicUser=yes` + `StateDirectory=ddnsondemand`, so state lives
-at `/var/lib/ddnsondemand/state.json`.
+under `/var/lib/ddnsondemand/`.
 
 ## Notes & limitations
 

@@ -123,12 +123,19 @@ Schema [`schema/config.schema.json`](schema/config.schema.json) 供编辑器校�
 ## systemd
 
 将二进制安装到 `/usr/bin/ddnsondemand`，配置放在 `/etc/ddnsondemand/config.yaml`，
-密钥放在 `/etc/ddnsondemand/env`（每行 `KEY=VALUE`）。随后二选一：
+密钥放在 `/etc/ddnsondemand/env`（每行 `KEY=VALUE`）。随后任选其一：
 
-- **Daemon**：`examples/ddnsondemand.service`
+- **Daemon**（所有 profile 跑在同一进程）：`examples/ddnsondemand.service`
   ```sh
   systemctl enable --now ddnsondemand.service
   ```
+- **Daemon，每个 profile 一个服务**：`examples/ddnsondemand@.service`
+  ```sh
+  systemctl enable --now ddnsondemand@home ddnsondemand@work
+  ```
+  每个实例只运行 `@` 后面那个 profile（`--profile`），因此可以各自独立地启动、
+  停止、重启与查看日志（`journalctl -u ddnsondemand@home`）。各实例共用配置文件，
+  但状态文件相互独立（`state-<profile>.json`）。
 - **Oneshot + timer**：`examples/ddnsondemand-oneshot.service` 与
   `examples/ddnsondemand.timer`
   ```sh
@@ -136,7 +143,7 @@ Schema [`schema/config.schema.json`](schema/config.schema.json) 供编辑器校�
   ```
 
 这些 unit 使用 `DynamicUser=yes` + `StateDirectory=ddnsondemand`，因此状态文件
-位于 `/var/lib/ddnsondemand/state.json`。
+位于 `/var/lib/ddnsondemand/` 下。
 
 > 通过 `.deb` 安装时，上述 unit 已随包安装到 `/usr/lib/systemd/system/`。
 
