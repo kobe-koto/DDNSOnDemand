@@ -1,0 +1,13 @@
+[Unit]
+Description=Run DDNSOnDemand one-shot update periodically (profile %i)
+
+[Timer]
+# First run shortly after boot, then every 5 minutes.
+OnBootSec=1min
+OnUnitActiveSec=5min
+Persistent=true
+# Triggers ddnsondemand-oneshot@%i.service (same instance name).
+Unit=ddnsondemand-oneshot@%i.service
+
+[Install]
+WantedBy=timers.target

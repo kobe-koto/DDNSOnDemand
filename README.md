@@ -164,11 +164,20 @@ Install the binary to `/usr/bin/ddnsondemand`, put your config at
   can start, stop, restart and follow each independently
   (`journalctl -u ddnsondemand@home`). Instances share the config but keep
   separate state files (`state-<profile>.json`).
-- **One-shot + timer**: `examples/ddnsondemand-oneshot.service` and
-  `examples/ddnsondemand.timer`
+- **One-shot + timer** (all profiles): `examples/ddnsondemand-oneshot.service`
+  and `examples/ddnsondemand.timer`
   ```sh
   systemctl enable --now ddnsondemand.timer
   ```
+- **One-shot + timer, one timer per profile**:
+  `examples/ddnsondemand-oneshot@.service` and
+  `examples/ddnsondemand-oneshot@.timer`
+  ```sh
+  systemctl enable --now ddnsondemand-oneshot@home.timer
+  ```
+  Same per-profile split as `ddnsondemand@.service`, but driven by a timer
+  instead of a long-running process: each timer updates only its own profile
+  and keeps a separate state file.
 
 The units use `DynamicUser=yes` + `StateDirectory=ddnsondemand`, so state lives
 under `/var/lib/ddnsondemand/`.

@@ -1,0 +1,25 @@
+[Unit]
+# Per-profile one-shot update, triggered by ddnsondemand-oneshot@.timer.
+# `systemctl enable --now ddnsondemand-oneshot@home.timer` updates only the
+# `home` profile on a schedule. Use the plain ddnsondemand-oneshot.service to
+# update every profile in one run instead.
+Description=DDNSOnDemand (one-shot update, profile %i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Store secrets here as KEY=VALUE (CF_API_TOKEN=..., CF_ZONE_ID=..., etc.)
+EnvironmentFile=/etc/ddnsondemand/env
+# One shared config holds every profile; --profile %i limits this run to the
+# one named after the "@". Each instance keeps its own state file, so timers
+# that happen to fire together never write the same file.
+ExecStart=/usr/bin/ddnsondemand --config /etc/ddnsondemand/config.yaml --state /var/lib/ddnsondemand/state-%i.json --profile %i oneshot
+
+# Hardening
+DynamicUser=yes
+StateDirectory=ddnsondemand
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes

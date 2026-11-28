@@ -152,11 +152,19 @@ Schema [`schema/config.schema.json`](schema/config.schema.json) 供编辑器校�
   每个实例只运行 `@` 后面那个 profile（`--profile`），因此可以各自独立地启动、
   停止、重启与查看日志（`journalctl -u ddnsondemand@home`）。各实例共用配置文件，
   但状态文件相互独立（`state-<profile>.json`）。
-- **Oneshot + timer**：`examples/ddnsondemand-oneshot.service` 与
-  `examples/ddnsondemand.timer`
+- **Oneshot + timer**（所有 profile）：`examples/ddnsondemand-oneshot.service`
+  与 `examples/ddnsondemand.timer`
   ```sh
   systemctl enable --now ddnsondemand.timer
   ```
+- **Oneshot + timer，每个 profile 一个 timer**：
+  `examples/ddnsondemand-oneshot@.service` 与
+  `examples/ddnsondemand-oneshot@.timer`
+  ```sh
+  systemctl enable --now ddnsondemand-oneshot@home.timer
+  ```
+  与 `ddnsondemand@.service` 一样按 profile 拆分，只是由 timer 触发而非常驻进程：
+  每个 timer 只更新自己的 profile，并各自保留独立的状态文件。
 
 这些 unit 使用 `DynamicUser=yes` + `StateDirectory=ddnsondemand`，因此状态文件
 位于 `/var/lib/ddnsondemand/` 下。
