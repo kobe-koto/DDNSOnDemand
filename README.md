@@ -46,6 +46,25 @@ cargo build --release
 # binary at target/release/ddnsondemand
 ```
 
+## Footprint
+
+Built for small, always-on deployments:
+
+- **Binary** (release profile: `opt-level = "z"`, LTO, `codegen-units = 1`,
+  `panic = "abort"`, stripped): about **2.7 MiB**. The musl build is a fully
+  static position-independent executable — no libc or other shared library is
+  needed on the target — with its relocations packed as RELR; the glibc build
+  is dynamically linked.
+- **Memory**: the async runtime is single-threaded (`current_thread`), so the
+  daemon runs in **one OS thread**. On the musl static build, one idle profile
+  holds roughly **1.5 MiB PSS** (≈3–4 MiB RSS) once a resolve cycle has loaded
+  the TLS stack. Each additional profile is one more lightweight async task,
+  not a thread.
+
+Figures are x86-64 with transparent huge pages disabled; leaving THP at
+`always` adds ~1 MiB to RSS. Check your own target with
+`cat /proc/$(pidof ddnsondemand)/smaps_rollup`.
+
 ## Usage
 
 ```

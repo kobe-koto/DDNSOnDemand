@@ -42,6 +42,22 @@ cargo build --release
 # 产物位于 target/release/ddnsondemand
 ```
 
+## 占用
+
+面向长期运行的小型部署：
+
+- **体积**（release 配置：`opt-level = "z"`、LTO、`codegen-units = 1`、
+  `panic = "abort"`、已 strip）：约 **2.7 MiB**。musl 版本是完全静态的位置无关
+  可执行文件——目标机上无需 libc 或其他共享库——重定位以 RELR 打包；glibc 版本
+  为动态链接。
+- **内存**：异步运行时为单线程（`current_thread`），因此守护进程只占用
+  **一个系统线程**。在 musl 静态版本上，一个空闲 profile 在完成一次解析（加载
+  TLS 栈）后约占 **1.5 MiB PSS**（≈3–4 MiB RSS）。每多一个 profile 只是多一个
+  轻量异步任务，而非线程。
+
+以上数据基于 x86-64、关闭透明大页（THP）；若 THP 保持 `always`，RSS 会增加约
+1 MiB。可用 `cat /proc/$(pidof ddnsondemand)/smaps_rollup` 测量你自己的目标。
+
 ## 使用
 
 ```
